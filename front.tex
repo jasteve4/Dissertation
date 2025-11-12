@@ -1,0 +1,38 @@
+%% ------------------------------ Abstract ---------------------------------- %%
+\begin{abstract}
+
+Persistent faults in non-volatile memory, such as flash or ROM, pose a major threat to system reliability. Unlike transient upsets in volatile state, these errors alter the stored program image and reappear across every boot, often disabling recovery during system initialization. Existing compiler-based methods focus on transient data-path faults and provide little protection once instruction bytes in static memory are corrupted.
+
+This thesis examines software-based strategies to improve the reliability of instruction memory through code repair and code replication, coordinated by pre-execution validation. Repair reconstructs corrupted regions algorithmically, while replication replaces damaged code with validated alternatives. Together, these methods strengthen execution continuity when parts of the program image are compromised. The work evaluates their effects on performance, reliability, storage cost, and code overhead, identifying the trade-offs that determine when each approach is most effective for embedded and safety-critical systems.
+
+\end{abstract}
+
+
+%% ---------------------------- Copyright page ------------------------------ %%
+%% Comment the next line if you don't want the copyright page included.
+\makecopyrightpage
+
+%% -------------------------------- Title page ------------------------------ %%
+\maketitlepage
+
+%% -------------------------------- Dedication ------------------------------ %%
+%\begin{dedication}
+% \centering To my parents.
+%\end{dedication}
+
+%% -------------------------------- Biography ------------------------------- %%
+%\begin{biography}
+%The author was born in a small town \ldots
+%\end{biography}
+
+%% ----------------------------- Acknowledgements --------------------------- %%
+\begin{acknowledgements}
+Thanks to family, advisor, committee, office friends, etc. ...
+\end{acknowledgements}
+
+
+\thesistableofcontents
+
+\thesislistoftables
+
+\thesislistoffigures

@@ -1,0 +1,21 @@
+% --- Chapter 4 Lead-In ---
+The unprotected limit study showed that instruction memory fails deterministically once faults persist in static storage. 
+Resets and detection mechanisms provide no recovery because corrupted instructions are re-executed identically after every reboot. 
+This behavior defines the lower bound of software reliability—where faults in code itself permanently prevent progress.  
+
+To move beyond detection, the system must regenerate correct behavior from within the same faulty memory space. 
+\textbf{Repair} achieves this by algorithmically reconstructing code or data from redundant or overlapping information, 
+producing a more reliable version of the original content. 
+Unlike reset-based recovery, repair operates in place, fusing imperfect data to restore an executable state.  
+
+This chapter introduces repair as the first active recovery mechanism for static memory faults. 
+It evaluates two representative models—\textbf{Majority-of-3} and \textbf{Reed–Solomon (255, 223)}—that combine information from multiple unreliable regions to reconstruct usable code. 
+Both approaches operate entirely within memory, without reboot or external reprogramming, and aim to restore a coherent instruction stream by reinforcing correct content through redundancy.  
+
+\section{Overview}
+\label{sec:repair-overview}
+
+The following sections develop a quantitative model of repair, derive analytical expressions for survivability, 
+and validate these models through a limit study that measures how repair strength and redundancy influence system reliability. 
+These results establish repair as a baseline mechanism for sustaining execution when persistent instruction corruption 
+would otherwise render the system non-recoverable.

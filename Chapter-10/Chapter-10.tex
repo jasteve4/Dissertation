@@ -1,0 +1,147 @@
+% ---------------------------------------------------
+\chapter{FLCR Compiler}
+\label{chap:flcr-compiler}
+% ---------------------------------------------------
+
+% Toggle for showing the LLVM Pass section (change to \showflcrpassfalse to hide)
+\newif\ifshowflcrpass
+\showflcrpasstrue
+
+\section*{Overview}
+This chapter details the implementation of Function-Level Code Replication (FLCR)
+within the compiler framework. The transformation is organized into eight
+phases (A–H), followed by runtime initialization of the Replica Selector Table (RST).
+Each phase represents a distinct compiler pass responsible for outlining, cloning,
+instrumentation, and metadata emission to enable self-validating replicated code.
+
+% ---------------------------------------------------
+% ---------------------------------------------------
+\section*{Tool Flow}
+Figure~\ref{fig:flcr-tool-flow} shows the complete FLCR build pipeline,
+from protected source code to a post-linked binary with injected metadata.
+This process is designed to integrate cleanly with any LLVM-based toolchain
+and uses standard intermediate formats for compatibility with both Clang
+and external linkers.
+
+\begin{figure}[t]
+  \centering
+  % Update to your actual path if needed
+  \includegraphics[width=\linewidth]{Chapter-10/figs/flcr-tool-flow.png}
+  \caption{FLCR compiler and tool flow. Protected sources are lowered to LLVM IR,
+           transformed by the FLCR pass, compiled to objects, linked with the FLCR
+           runtime library, and finalized through post-link metadata injection.}
+  \label{fig:flcr-tool-flow}
+\end{figure}
+
+\paragraph{Stages (left to right).}
+\begin{enumerate}
+  \item \textbf{Source Collection.}  
+        Identify and gather all C/C++ source files that must be protected under FLCR.
+        These files form the logical protection unit for the build.
+  \item \textbf{IR Generation and Bundling.}  
+        Each source is lowered to LLVM IR (\texttt{.ll}) using the standard front end.
+        All IR units are then combined into a single IR “library” module for pass execution.
+  \item \textbf{Run FLCR Pass.}  
+        The FLCR compiler pass transforms the combined IR to insert validation metadata,
+        redirection logic, and function clones, producing a hardened module
+        (\texttt{.hard.ll}).
+  \item \textbf{Lower to Object Files.}  
+        The transformed IR is compiled to native object files (\texttt{.o}/\texttt{.so}).
+        The FLCR runtime support library is built at this stage as a companion object.
+  \item \textbf{Linking.}  
+        Application and runtime objects are linked using the standard linker script
+        to generate an intermediate binary (\texttt{.tbin}). This step merges all
+        function tables and ensures consistent section layout.
+  \item \textbf{Post-Link Metadata Injection.}  
+        The post-link tool scans the intermediate binary, computes function sizes and
+        checksums, and populates the lookup tables emitted by the FLCR pass.
+        The final binary (\texttt{.bin}) is fully self-validating.
+\end{enumerate}
+
+
+\paragraph{Artifacts.}
+\begin{itemize}
+  \item \texttt{*.ll} — per-source LLVM IR files combined into a single library.
+  \item \texttt{*.hard.ll} — IR after FLCR pass; includes cloned variants and metadata.
+  \item \texttt{*.o}, \texttt{*.so} — compiled objects, including the FLCR runtime object.
+  \item \texttt{*.tbin} — intermediate binary prior to metadata injection.
+  \item \texttt{*.bin} — final FLCR-protected executable with populated lookup tables.
+\end{itemize}
+
+
+% ---------------------------------------------------
+\ifshowflcrpass
+  \input{Chapter-10/flcr-pass}
+  \clearpage
+\fi
+% ---------------------------------------------------
+% ---------------------------------------------------
+\section*{Runtime FLCR Code}
+% ---------------------------------------------------
+
+At runtime, two lightweight routines activate and maintain the replicated code:
+\texttt{code\_init()} initializes the metadata tables, and \texttt{resolve()}
+handles indirect function lookups. These routines complete the execution model
+established by the compiler passes. The initialization phase builds the Indirection
+Table (ITab) from validated entries in the Function Address Table (FAT), while the
+resolver performs a binary search over the Indirection Map (IMap) to locate the
+validated target address for an indirect call.
+
+% ---------------------------------------------------
+\subsection*{Metadata Initialization (\texttt{code\_init()})}
+\begin{algorithm}[H]
+\caption{\texttt{code\_init} — Populate Indirection Table (ITab) from FAT}
+\label{alg:code-init-itab}
+\begin{algorithmic}[1]
+\State \textbf{Inputs:} \texttt{FAT} (Function Address Table), \texttt{FuncSize}, \texttt{FuncHash}, \texttt{NumGroups}, \texttt{N}
+\State \textbf{Output:} \texttt{ITab} (Indirection Table)
+\For{\texttt{gid} \textbf{in} 0 .. \texttt{NumGroups-1}}
+  \For{\texttt{vid} \textbf{in} 0 .. \texttt{N-1}}
+    \State \texttt{addr} $\gets$ \texttt{FAT[gid * N + vid]}
+    \If{\textproc{validate}(\texttt{addr}, \texttt{FuncSize}, \texttt{FuncHash})}
+      \State \texttt{ITab[gid]} $\gets$ \texttt{addr}
+      \State \textbf{break}
+    \EndIf
+  \EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+% ---------------------------------------------------
+\subsection*{Resolver (\texttt{resolve()}) — Binary Search over IMap}
+\noindent
+The resolver performs a \textbf{binary search} within the Indirection Map (IMap),
+which stores sorted pairs of \texttt{(orig\_addr, target\_addr)}.  
+Given a function pointer, it searches for a matching original address and returns
+the validated replica’s address. If no match is found, the resolver returns the
+input pointer unchanged, allowing untracked calls to execute normally.
+
+\begin{algorithm}[H]
+\caption{\texttt{resolve(ptr)} — Binary search in IMap}
+\label{alg:resolve-bsearch}
+\begin{algorithmic}[1]
+\State \textbf{Input:} \texttt{ptr} (original function pointer), \texttt{IMap} (sorted by \texttt{orig\_addr})
+\State \textbf{Output:} \texttt{target} (resolved function pointer)
+\State \texttt{key} $\gets$ \textproc{normalize\_ptr}(\texttt{ptr}) \Comment{e.g., cast to \texttt{i8*}}
+\State \texttt{lo} $\gets$ 0;\; \texttt{hi} $\gets$ \texttt{IMap.size() - 1}
+\While{\texttt{lo} $\le$ \texttt{hi}}
+  \State \texttt{mid} $\gets$ (\texttt{lo} + \texttt{hi}) / 2
+  \State \texttt{cur} $\gets$ \texttt{IMap[mid].orig\_addr}
+  \If{\texttt{key} $==$ \texttt{cur}}
+    \State \Return \texttt{IMap[mid].target\_addr}
+  \ElsIf{\texttt{key} $<$ \texttt{cur}}
+    \State \texttt{hi} $\gets$ \texttt{mid} - 1
+  \Else
+    \State \texttt{lo} $\gets$ \texttt{mid} + 1
+  \EndIf
+\EndWhile
+\State \Return \texttt{ptr} \Comment{no entry found: return input pointer}
+\end{algorithmic}
+\end{algorithm}
+
+\section*{Summary}
+The FLCR compiler pass pipeline progressively introduces code replication,
+metadata emission, and call-site redirection across eight transformation phases.
+At runtime, the Replica Selector Table validates each variant and populates
+the Function Lookup Table with the first verified address, allowing transparent
+execution redirection and robust fault recovery.

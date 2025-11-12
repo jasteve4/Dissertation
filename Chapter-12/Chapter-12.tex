@@ -1,0 +1,131 @@
+% ---------------------------------------------------
+\chapter{Post-Link ELF Patch Tool}
+\label{chap:postlink-elf-patch}
+% ---------------------------------------------------
+
+\section{Overview}
+This chapter specifies the post-link utility that finalizes FLCR metadata
+\emph{after} the linker has assigned physical addresses. The tool reads the
+linked ELF, derives function \emph{sizes} from the symbol table, and computes
+per-replica \emph{hashes} over code bytes. It then writes these values into the
+\textbf{Function Size Table (FST)} and \textbf{Function Hash Table (FHT)}
+corresponding to the replica addresses enumerated in the
+\textbf{Function Address Table (FAT)}.
+
+\paragraph{Inputs.}
+A fully linked ELF binary containing:
+\begin{itemize}
+  \item \texttt{FAT} symbol (Function Address Table) — array of function start virtual addresses;
+  \item \texttt{FST} symbol (Function Size Table) — writable array (u32) to be populated;
+  \item \texttt{FHT} symbol (Function Hash Table) — writable array (u32) to be populated;
+  \item \texttt{.symtab} (preferred) or \texttt{.dynsym} (fallback).
+\end{itemize}
+
+\paragraph{Outputs.}
+The same ELF binary with \texttt{FST} and \texttt{FHT} entries updated in place.
+
+\paragraph{Conventions.}
+All examples below assume 32-bit virtual addresses for table entries and a
+little-endian 32-bit word hash (\texttt{xor32}) with natural modulo-$2^{32}$
+overflow and \emph{no tail padding}.
+
+% ---------------------------------------------------
+\section{Algorithms}
+
+\begin{algorithm}[H]
+\caption{\texttt{func\_size\_by\_vaddr(vaddr, Symtab)} — Linear scan of \texttt{.symtab}}
+\label{alg:func-size-by-vaddr}
+\begin{algorithmic}[1]
+\State \textbf{Input:} \texttt{vaddr} (u32), \texttt{Symtab} (array of \texttt{Elf\_Sym})
+\State \textbf{Output:} \texttt{size} (u32)
+\For{\texttt{i} $\gets$ 0 \textbf{to} \texttt{Symtab.size() - 1}}
+  \State \texttt{sym} $\gets$ \texttt{Symtab[i]}
+  \If{\texttt{sym.st\_type} $==$ \texttt{STT\_FUNC}}
+    \If{\texttt{vaddr} $==$ \texttt{sym.st\_value}}  \Comment{exact start match}
+      \State \Return \texttt{sym.st\_size}
+    \EndIf
+  \EndIf
+\EndFor
+\State \Return \texttt{0} \Comment{no exact match found}
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{\texttt{populate\_fst(ELF)} — Fill Function Size Table (FST) from FAT via \texttt{.symtab}}
+\label{alg:populate-fst}
+\begin{algorithmic}[1]
+\State \textbf{Input:} \texttt{ELF} (binary with tables \texttt{FAT}, \texttt{FST})
+\State \textbf{Output:} \texttt{FST} updated in \texttt{ELF}
+\State \texttt{Symtab} $\gets$ \textproc{find\_symtab}(\texttt{ELF}) \Comment{prefer \texttt{.symtab}, fallback \texttt{.dynsym}}
+\State \texttt{FAT}    $\gets$ \textproc{find\_symbol}(\texttt{ELF}, \texttt{"function\_Address\_Table"})
+\State \texttt{FST}    $\gets$ \textproc{find\_symbol}(\texttt{ELF}, \texttt{"function\_Size\_Table"})
+\State \texttt{fat\_bytes} $\gets$ \textproc{symbol\_size}(\texttt{FAT})
+\State \texttt{N} $\gets$ \texttt{fat\_bytes} $/ 4$ \Comment{u32 entries}
+\State \texttt{func\_vaddr} $\gets$ \textproc{read\_u32\_array}(\texttt{ELF}, \texttt{FAT}) \Comment{array of \texttt{uint32\_t} vaddrs}
+\For{\texttt{i} $\gets$ 0 \textbf{to} \texttt{N - 1}}
+  \State \texttt{a} $\gets$ \texttt{func\_vaddr[i]} \Comment{function start vaddr}
+  \State \texttt{n} $\gets$ \textproc{func\_size\_by\_vaddr}(\texttt{a}, \texttt{Symtab}) \Comment{linear scan of \texttt{.symtab}}
+  \State \textproc{write\_u32\_at}(\texttt{ELF}, \texttt{FST}, \texttt{i}, \texttt{n})
+\EndFor
+\State \textproc{save}(\texttt{ELF})
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{\texttt{xor32(buf)} — 32-bit little-endian XOR, no tail padding}
+\label{alg:xor32-no-pad}
+\begin{algorithmic}[1]
+\State \textbf{Input:} \texttt{buf} (byte array)
+\State \textbf{Output:} \texttt{h} (u32)
+\State \texttt{x} $\gets$ \texttt{0}
+\For{\texttt{j} $\gets$ 0 \textbf{to} \textproc{len}(\texttt{buf}) $- 1$}
+  \State \texttt{lane} $\gets$ \texttt{(j mod 4)} \Comment{byte position within 32-bit word}
+  \State \texttt{x} $\gets$ \texttt{x} $\oplus$ \big(\texttt{buf[j]} $\ll$ \texttt{(8 $\times$ lane)}\big)
+\EndFor
+\State \Return \texttt{x} \Comment{natural overflow modulo $2^{32}$}
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{\texttt{populate\_fht(ELF)} — Fill Function Hash Table (FHT) using FAT (vaddrs) and FST (sizes)}
+\label{alg:populate-fht}
+\begin{algorithmic}[1]
+\State \textbf{Input:} \texttt{ELF} (binary with tables \texttt{FAT}, \texttt{FST}, \texttt{FHT})
+\State \textbf{Output:} \texttt{FHT} updated in \texttt{ELF}
+\State \texttt{FAT} $\gets$ \textproc{find\_symbol}(\texttt{ELF}, \texttt{"function\_Address\_Table"})
+\State \texttt{FST} $\gets$ \textproc{find\_symbol}(\texttt{ELF}, \texttt{"function\_Size\_Table"})
+\State \texttt{FHT} $\gets$ \textproc{find\_symbol}(\texttt{ELF}, \texttt{"function\_Hash\_Table"})
+\State \texttt{fat\_bytes} $\gets$ \textproc{symbol\_size}(\texttt{FAT}); \;\; \texttt{N} $\gets$ \texttt{fat\_bytes} $/ 4$
+\State \texttt{func\_vaddr} $\gets$ \textproc{read\_u32\_array}(\texttt{ELF}, \texttt{FAT})
+\State \texttt{sizes}      $\gets$ \textproc{read\_u32\_array}(\texttt{ELF}, \texttt{FST})
+\State \textbf{assert} \textproc{symbol\_size}(\texttt{FST}) $==$ \texttt{N} $\times 4$
+\State \textbf{assert} \textproc{symbol\_size}(\texttt{FHT}) $\ge$ \texttt{N} $\times 4$
+\For{\texttt{i} $\gets$ 0 \textbf{to} \texttt{N - 1}}
+  \State \texttt{a} $\gets$ \texttt{func\_vaddr[i]}; \;\; \texttt{n} $\gets$ \texttt{sizes[i]}
+  \State \texttt{buf} $\gets$ \textproc{read\_bytes\_at\_vaddr}(\texttt{ELF}, \texttt{a}, \texttt{n})
+  \State \texttt{h} $\gets$ \textproc{xor32}(\texttt{buf}) \Comment{no tail padding; natural modulo-$2^{32}$ overflow}
+  \State \textproc{write\_u32\_at}(\texttt{ELF}, \texttt{FHT}, \texttt{i}, \texttt{h})
+\EndFor
+\State \textproc{save}(\texttt{ELF})
+\end{algorithmic}
+\end{algorithm}
+
+% ---------------------------------------------------
+\section{Notes and Assumptions}
+\begin{itemize}
+  \item \textbf{Symbol source:} prefer \texttt{.symtab}; fall back to \texttt{.dynsym} if necessary.
+  \item \textbf{Exact-match policy:} sizes are derived only for symbols with
+        \emph{exact} start address matches (\texttt{st\_value} equals FAT entry).
+  \item \textbf{Word size / endianness:} examples assume 32-bit entries (u32) and little-endian hash lanes.
+        Adapt \texttt{read\_u32\_array} / \texttt{write\_u32\_at} for 64-bit targets.
+  \item \textbf{Section placement:} tables are updated in-place at the symbol’s
+        section/offset as reported by the ELF symbol table.
+\end{itemize}
+
+% ---------------------------------------------------
+\section{Summary}
+The post-link tool completes the FLCR metadata by (i) deriving function sizes
+from the linked symbol table and writing them to the FST, and (ii) hashing the
+linked code bytes to populate the FHT. Together with the linker-assigned
+addresses in the FAT, these tables enable runtime validation and selection of
+replicas during \texttt{code\_init()}.

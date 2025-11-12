@@ -1,0 +1,149 @@
+\chapter{Memory Replication}
+\label{chap:memory-replication}
+
+\textbf{Memory replication} is a method of redirecting code and data access around faulty memory regions. When a section of static memory becomes unreliable or permanently damaged, replication allows the system to continue execution by using alternate copies of the affected content.  
+
+Replication can be implemented in two general forms: \textbf{data replication} and \textbf{functional replication}.  
+
+\textbf{Data level replication} duplicates the contents of memory---such as variables, tables, or static data structures---so that a consistent copy remains accessible even if part of the original storage fails. Accesses to the replicated data are rerouted through a mapping or arbitration mechanism that selects a reliable copy.  
+
+\textbf{Functional level replication} reproduces the executable code itself, creating alternate instances of functions or basic blocks that can be invoked when the originals are inaccessible. In this form, replication is tied to program structure rather than raw storage, allowing control flow to be redirected around faults at the code level.  
+
+In both forms, replication serves as a mechanism for maintaining accessibility to information or functionality when portions of memory can no longer be used.  
+
+While replication conceptually ensures continued access to code or data after faults, 
+its reliability benefit can be quantified mathematically. 
+The following section develops a probabilistic model that relates 
+the degree of replication to the overall survivability of the protected memory space.
+
+
+\section{Memory Replication: Survivability}
+\label{sec:mem-rep-survivability}
+
+Memory replication increases the probability that a protected region of code or data 
+remains fault-free even when individual bits fail. By dividing the total protected memory 
+into independently replicated regions, the system can recover functionality from any 
+surviving copy of the replicated content.
+
+Let the per-bit fault probability be $p_f$, and let the total protected memory size be $S$ bytes. 
+Each \textit{region} of size $R$ bytes contains $8R$ bits, and each bit can fail independently. 
+The probability that an entire region remains fault-free is
+
+\begin{equation}
+p_{\text{region}} = (1 - p_f)^{8R}.
+\end{equation}
+
+\subsection*{Section-Level Survivability}
+
+A section is composed of $N$ replicated regions, each representing a full copy of the same 
+code or data block. The system can recover a section if at least one region remains fault-free. 
+If $X$ denotes the number of fault-free regions in a section, then
+
+\begin{equation}
+X \sim \mathrm{Binomial}(N,\, p_{\text{region}}),
+\end{equation}
+
+and the section fault-free probability is
+
+\begin{equation}
+p_{\text{section}} = P(X \ge 1)
+= \sum_{k=1}^{N} \binom{N}{k}\, p_{\text{region}}^{k}\, (1 - p_{\text{region}})^{N-k}.
+\end{equation}
+
+This can be expressed in closed form as
+
+\begin{equation}
+p_{\text{section}} = 1 - (1 - p_{\text{region}})^{N}
+= 1 - \Big[\,1 - (1 - p_f)^{8R}\,\Big]^{N}.
+\end{equation}
+
+When $N = 1$, this reduces to the unreplicated case 
+$p_{\text{section}} = (1 - p_f)^{8R}$.
+
+
+The previous expression describes the reliability of a single replicated section. 
+To extend this to an entire memory image, the next step is to combine all sections into a 
+system-wide survivability model.
+
+
+\subsection*{System-Level Survivability}
+
+The entire protected memory space of size $S$ is divided into $M$ sections, 
+where each section is independently replicated and must be recoverable 
+for the system to function. The number of such sections is
+
+\begin{equation}
+M = \frac{S}{R N}.
+\end{equation}
+
+Assuming independence between sections, the probability that the entire system 
+remains fault-free is the product of all section probabilities:
+
+\begin{equation}
+p_{\text{free,total}} = (p_{\text{section}})^{M}.
+\end{equation}
+
+Substituting the section expression yields the combined hierarchical model:
+
+\begin{equation}
+\boxed{
+p_{\text{free,total}}(S, R, N, p_f)
+= \Big[\,1 - \big(1 - (1 - p_f)^{8R}\big)^{N}\,\Big]^{\tfrac{S}{R N}}.
+}
+\end{equation}
+
+\subsection*{Interpretation}
+
+This model captures the survivability advantage of memory replication:
+\begin{itemize}
+    \item Each region acts as an independent chance for recovery.
+    \item Each section survives as long as at least one replica is intact.
+    \item The total system reliability scales with the number of sections 
+          $M = S / (R N)$.
+\end{itemize}
+
+For small $p_f$, the exponential approximation $(1 - p_f)^{8R} \approx e^{-8Rp_f}$ 
+provides a convenient analytical form. In this regime, replication produces a 
+significant survivability gain even for modest $N$, particularly when $R \ll S$, 
+since multiple opportunities for fault-free recovery exist within each section.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{Chapter-4/figs/pfree_R256_N2_16.png}
+  \caption{$p_{\text{free}}$ vs.\ $p_f$ for total memory $S=128\,\mathrm{kB}$ 
+           and varying replication count $N$.}
+  \label{fig:varN}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{Chapter-4/figs/pfree_R64k_16_N2.png}
+  \caption{$p_{\text{free}}$ vs.\ $p_f$ for total memory $S=128\,\mathrm{kB}$ 
+           and varying region size $R$.}
+  \label{fig:varR}
+\end{figure}
+
+
+The probabilistic model above captures memory replication in abstract terms, 
+treating all replicated regions uniformly. 
+In practice, however, the implementation and purpose of replication 
+depend on the type of memory content being protected. 
+The next section distinguishes between data-level and functional-level replication, 
+which apply the same reliability principles to different parts of a program's memory space.
+
+\section{Forms of Memory Replication}
+\label{sec:forms-mem-replication}
+
+The survivability model above treats replication in general terms, without distinguishing between code and data. In practice, replication must account for the distinct characteristics of each memory domain.
+
+When replication is applied to \textbf{static data}, it is referred to as \textbf{data-level replication}. This form focuses on maintaining multiple consistent versions of stored data within memory. It operates entirely at the data layer and does not alter the structure or execution behavior of the program. The program logic remains unchanged, while the replicated data provides continued accessibility in the presence of faults.
+
+When replication is applied to \textbf{executable code} (e.g., functions or basic blocks), it is referred to as \textbf{functional-level replication}. Here, replication operates at the program-structure level, providing alternate instances of code that can be used when original locations are faulty.
+
+The next chapters develop these two levels in detail:
+\begin{itemize}
+  \item \textbf{Chapter X — Data-Level Replication:} redundancy applied to static data, preserving accessibility under fault conditions.
+  \item \textbf{Chapter Y — Functional-Level Replication:} replication at the code level, sustaining execution when instruction memory is affected.
+\end{itemize}
+
+Together, these topics extend the general framework of memory replication into two complementary domains—one preserving data integrity, and the other sustaining executable functionality.

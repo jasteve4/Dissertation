@@ -1,0 +1,127 @@
+% ---------------------------------------------------
+\chapter{Limit Studies Discussion: Replication and Repair}
+\label{chap:limit-discussion}
+% ---------------------------------------------------
+
+\section*{Overview}
+This chapter consolidates the findings of all limit studies conducted for both
+replication and repair mechanisms.  
+The goal is to compare how reliability, overhead, and fault containment scale
+across different fault-tolerance strategies and levels of granularity.
+Replication mechanisms—Region-Level (RLCR), Function-Level (FLCR), and
+Basic-Block-Level (BBLCR)—protect execution through redundancy and redirection.
+Repair mechanisms, in contrast, reconstruct corrupted code or data in place,
+relying on redundant encoding rather than multiple replicas.
+
+Both methods operate under the same probabilistic framework introduced earlier:
+survivability depends on the number of redundant elements, their validation
+coverage, and the probability of an undetected fault.  
+Together, replication and repair form the foundation of the proposed resilience
+hierarchy—replication ensures continuity, while repair restores integrity.
+
+% ---------------------------------------------------
+\section*{Comparative Reliability}
+The reliability data collected across all configurations reveal consistent
+scaling behavior: as replication granularity increases, fault containment
+improves and survivability extends to finer levels of program structure.
+RLCR provides coarse fault isolation by selecting an entire verified image;
+FLCR confines faults to the function level; and BBLCR achieves the highest
+containment within individual control-flow blocks.
+
+Repair mechanisms complement this trend by targeting individual instructions or
+data words rather than entire structural units.  
+Where replication avoids faults through redirection, repair mitigates them
+through reconstruction.
+
+\begin{figure}[t]
+  \centering
+  % \includegraphics[width=\linewidth]{Chapter-9/figs/reliability-trends.png}
+  \caption{Placeholder for comparative reliability trends across replication and
+           repair models (RLCR, FLCR, BBLCR, and Repair).}
+  \label{fig:limit-reliability}
+\end{figure}
+
+% ---------------------------------------------------
+\section*{Overhead and Structural Tradeoffs}
+Replication and repair incur different types of cost.  
+Replication introduces \textbf{static overhead} in the form of additional memory
+for replicas and metadata structures (e.g., ITab, BTab), as well as
+\textbf{dynamic overhead} from validation and redirection at runtime.
+Repair mechanisms, meanwhile, add \textbf{computational overhead} for decoding
+and reconstruction, especially when error density is high.
+
+As granularity increases—from regions to basic blocks—the validation frequency
+rises sharply, increasing both instruction count and runtime latency.
+In contrast, repair overhead scales with the number of faults encountered rather
+than program structure, making it more predictable in low-fault environments.
+
+\begin{table}[h!]
+  \centering
+  \renewcommand{\arraystretch}{1.2}
+  \begin{tabularx}{\linewidth}{|l|X|X|X|}
+    \hline
+    \textbf{Mechanism} & \textbf{Static Overhead} & \textbf{Dynamic Overhead} & \textbf{Notes} \\ \hline
+    RLCR  & High (replica images) & Low (startup validation) & Coarse isolation \\ \hline
+    FLCR  & Moderate (function replicas) & Moderate (call redirection) & Balance of cost and containment \\ \hline
+    BBLCR & High (block metadata) & High (branch redirection) & Fine containment, high complexity \\ \hline
+    Repair & Low (code parity) & Variable (reconstruction time) & Continuous protection \\ \hline
+  \end{tabularx}
+  \caption{Placeholder table comparing overhead characteristics for replication and repair mechanisms.}
+  \label{tab:limit-overhead}
+\end{table}
+
+% ---------------------------------------------------
+\section*{Fault Containment and Recovery Scope}
+Each technique limits the spatial and temporal propagation of faults differently:
+\begin{itemize}
+  \item \textbf{RLCR} recovers at the region or image scale by selecting an alternate verified copy.
+  \item \textbf{FLCR} confines corruption to individual functions, maintaining program flow through call-site indirection.
+  \item \textbf{BBLCR} provides intra-function containment, validating and rerouting control at the level of basic blocks.
+  \item \textbf{Repair} operates below these layers, reconstructing individual corrupted instructions or data words.
+\end{itemize}
+
+Replication therefore provides discrete containment boundaries, while repair
+extends recoverability to the finest possible scale.
+The two can operate in tandem—replication preserves execution continuity while
+repair restores local integrity—forming a complementary defense structure.
+
+\begin{figure}[t]
+  \centering
+  % \includegraphics[width=\linewidth]{Chapter-9/figs/containment-scope.png}
+  \caption{Placeholder diagram illustrating fault containment scope for replication and repair mechanisms.}
+  \label{fig:limit-containment}
+\end{figure}
+
+% ---------------------------------------------------
+\section*{Combined Model: Repair within Replication}
+In practice, replication and repair need not be exclusive.  
+A hybrid model can use replication for immediate fault avoidance and repair for
+deferred correction.  For example, if a replicated function fails validation, a
+repair subsystem could reconstruct its corrupted copy and reintegrate it into
+the validated pool.
+
+This cooperative approach enables long-term reliability without unbounded
+replication cost.  Replication provides runtime continuity, ensuring the system
+always has a valid execution path, while repair reclaims lost replicas,
+restoring redundancy over time.
+
+\begin{figure}[t]
+  \centering
+  % \includegraphics[width=\linewidth]{Chapter-9/figs/hybrid-model.png}
+  \caption{Placeholder for conceptual hybrid model showing interaction between replication and repair layers.}
+  \label{fig:limit-hybrid}
+\end{figure}
+
+% ---------------------------------------------------
+\section*{Summary}
+The limit studies collectively demonstrate that increasing replication
+granularity improves fault containment but at the expense of control complexity
+and metadata size.  Repair mechanisms extend resilience beyond these limits by
+addressing corruption directly, rather than redirecting around it.
+
+Replication excels at maintaining continuous execution, while repair restores
+full program integrity.  Together, they represent complementary dimensions of
+software-based fault tolerance—replication for continuity, repair for recovery.
+
+Future chapters will integrate these models under a unified runtime and compiler
+framework to balance redundancy, cost, and self-healing capability.
